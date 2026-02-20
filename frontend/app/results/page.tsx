@@ -1,10 +1,10 @@
 "use client"
-import React from "react";
+import React, { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 
-export default function ResultsPage() {
+function ResultsPageInner() {
 
 	const searchParams = useSearchParams();
 	const jobId = searchParams.get("job_id");
@@ -193,7 +193,7 @@ export default function ResultsPage() {
 							<div className="mb-4 overflow-y-auto" style={{ maxHeight: '70vh' }}>
 								<div className="font-semibold text-base mb-2 truncate">{modalFileName}</div>
 
-								<Image src={modalImgUrl} alt={modalFileName || "Preview"} width={400} height={300} className="w-full max-h-80 object-contain rounded" />
+								{modalImgUrl && <Image src={modalImgUrl} alt={modalFileName || "Preview"} width={400} height={300} className="w-full max-h-80 object-contain rounded" />}
 
 									<div className="mt-8 w-full bg-zinc-100 dark:bg-zinc-900 rounded-lg p-4 text-left">
 										<h2 className="text-lg font-semibold mb-2 text-black dark:text-zinc-50">Labeled Result</h2>
@@ -213,7 +213,7 @@ export default function ResultsPage() {
 									Open json
 								</a>
 								<a
-									href={modalImgUrl}
+									href={modalImgUrl || ""}
 									download={modalFileName || undefined}
 									className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-xs flex items-center"
 									target="_blank"
@@ -227,5 +227,13 @@ export default function ResultsPage() {
 				)}
 			</main>
 		</div>
+	);
+}
+
+export default function ResultsPage() {
+	return (
+		<Suspense fallback={<div className="text-zinc-500">Loading...</div>}>
+			<ResultsPageInner />
+		</Suspense>
 	);
 }
