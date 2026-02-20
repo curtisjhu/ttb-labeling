@@ -1,13 +1,18 @@
 "use client";
 import React, { useCallback, useState } from "react";
+import {useRouter} from 'next/navigation';
 import Image from "next/image";
 
 export default function Home() {
 
+  const router = useRouter();
   // Store dropped files in state
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [isSending, setIsSending] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const [apiResponse, setApiResponse] = useState<any>(null);
 
   const onDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -41,8 +46,39 @@ export default function Home() {
     setPreviews(previews => previews.filter((_, i) => i !== idx));
   };
 
+	async function poll(job_id: string, operationName: string) {
+		try {
+			const response = await fetch(`https://ttb-labeling-1022869032774.us-central1.run.app/operation-status?operation_name=${operationName}`,
+					{ 
+            method: "GET",
+          }
+			)
+			const json = await response.json();
+
+			if (json.error) {
+				throw new Error(json.error || "Unknown error");
+			}
+
+			if (json.done) {
+				console.log(json);
+        setIsSending(false);
+
+        router.push(`/results?job_id=${job_id}`);
+				return;
+			}
+		} catch (error) {
+			console.error("Error polling operation status:", error);
+      setStatus(`Error polling operation status: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+		} finally {
+        setStatus("Polling...waiting for AI processor to finish");
+    }
+		setTimeout(() => poll(job_id, operationName), 750);
+	}
+
   const handleSend = async () => {
     setIsSending(true);
+    setStatus("Uploading files to server...")
 
     // SINGLE FILE
     if (!droppedFiles || droppedFiles.length === 0) return;
@@ -61,16 +97,18 @@ export default function Home() {
           throw new Error("Invalid response from server: missing result");
         }
 
-        window.open(`/results?result=${encodeURIComponent(json.result)}`, '_blank', 'noopener,noreferrer');
+        setApiResponse(json.result);
+
       } catch (err) {
         console.log("API response:", err);
       } finally {
         setIsSending(false);
+        setStatus(null);
       }
     }
 
     // MULTIPLE
-    if (droppedFiles.length < 8) {
+    else if (droppedFiles.length < 20) {
       const formData = new FormData();
       droppedFiles.forEach(file => {
         formData.append("files", file);
@@ -87,64 +125,22 @@ export default function Home() {
           throw new Error("Invalid response from server: missing job_id or operation_name");
         }
 
-        window.open(`/results?job_id=${json.job_id}&operation_name=${json.operation_name}`, '_blank', 'noopener,noreferrer'); 
+        poll(json.job_id, json.operation_name);
       } catch (err) {
         console.log("API response:", err);
       } finally {
-        setIsSending(false);
+        setStatus("Batch job submitted. Polling for batch to complete...");
       }
-    } else {
-
-      // BATCH
-      try {
-        const res = await fetch("https://ttb-labeling-1022869032774.us-central1.run.app/generate-upload-url", {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fileCount: droppedFiles.length })
-        });
-        const { url, id } = await res.json();
-
-        if (!id || !url) {
-          throw new Error("Invalid response from server: missing url or id");
-        }
-
-        window.open(`/results?job_id=${id}`, '_blank', 'noopener,noreferrer');
-
-        // Upload each file to the signed URL
-        droppedFiles.forEach(async (file, idx) => {
-          const r = await fetch(url, {
-            method: 'PUT',
-            headers: { 'Content-Type': file.type },
-            body: file
-          });
-          await r.json();
-          console.log(`Uploaded ${file.name} to ${url}`);
-
-          setPreviews(prev => {
-            const newPreviews = [...prev];
-            newPreviews[idx] = "uploaded";
-            return newPreviews;
-          });
-        });
-
-        window.open(`/results?job_id=${id}`, '_blank', 'noreferrer');
-
-      } catch (err) {
-        console.log("API response:", err);
-      } finally {
-        setIsSending(false);
-      }
-
     }
   }
 
   return (
     <div
-      className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black"
+      className="flex min-h-screen items-center justify-center font-sans"
       onDrop={onDrop}
       onDragOver={onDragOver}
     >
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
+      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 sm:items-start">
         <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
           <h1 className="text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
             AI Alcohol Labeling, TTB
@@ -225,10 +221,11 @@ export default function Home() {
 
               {isSending ? (
                 <div className="flex items-center justify-center w-full py-4">
-                  <svg className="animate-spin h-8 w-8 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin h-5 w-5 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                   </svg>
+                  {status && <span className="ml-4 text-gray-600">{status}</span>}
                 </div>
               ) : (
                 <button
@@ -243,6 +240,15 @@ export default function Home() {
             </div>
           )}
         </div>
+
+								{apiResponse && (
+									<div className="mt-8 w-full bg-zinc-100 dark:bg-zinc-900 rounded-lg p-4 text-left">
+										<h2 className="text-lg font-semibold mb-2 text-black dark:text-zinc-50">Labeled Result</h2>
+										<pre className="text-xs text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap break-all">
+											{JSON.stringify(apiResponse, null, 2)}
+										</pre>
+									</div>
+								)}
       </main>
     </div>
   );

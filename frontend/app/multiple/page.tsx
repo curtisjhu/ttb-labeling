@@ -44,10 +44,12 @@ export default function Home() {
     setPreviews(previews => previews.filter((_, i) => i !== idx));
   };
 
-	async function poll() {
+	async function poll(job_id: string, operationName: string) {
 		try {
-			const response = await fetch(`https://ttb-labeling-1022869032774.us-central1.run.app/operation-status/${operationName}`,
-					{ method: "GET"}
+			const response = await fetch(`https://ttb-labeling-1022869032774.us-central1.run.app/operation-status?operation_name=${operationName}`,
+					{ 
+            method: "GET",
+          }
 			)
 			const json = await response.json();
 
@@ -57,8 +59,9 @@ export default function Home() {
 
 			if (json.done) {
 				console.log(json);
+        setIsSending(false);
 
-        router.push(`/results?job_id=${json.job_id}`);
+        router.push(`/results?job_id=${job_id}`);
 				return;
 			}
 		} catch (error) {
@@ -66,15 +69,14 @@ export default function Home() {
       setStatus(`Error polling operation status: ${error instanceof Error ? error.message : String(error)}`);
       return;
 		} finally {
-        setIsSending(false);
-        setStatus("");
+        setStatus("Polling...waiting for AI processor to finish");
     }
-		setTimeout(poll, 750);
+		setTimeout(() => poll(job_id, operationName), 750);
 	}
 
   const handleSend = async () => {
 		setIsSending(true);
-    setStatus("Submitting batch job...");
+    setStatus("Uploading files to system...");
 		if (!droppedFiles || droppedFiles.length === 0) return;
 		const formData = new FormData();
 		droppedFiles.forEach(file => {
@@ -92,23 +94,24 @@ export default function Home() {
         throw new Error(json);
       }
 
-      poll(); // Start polling for results until it finishes
+      setStatus("Batch job submitted. Polling for batch to complete...");
+      poll(json.job_id, json.operation_name); // Start polling for results until it finishes
 
 		} catch (err) {
 			console.log("API response:", err);
       setApiResponse({ success: false, error: err instanceof Error ? err.message : String(err) });
 		} finally {
-      setStatus("Batch job submitted. Polling for batch to complete...");
+      setStatus("Wrapping up...");
 		}
   }
 
   return (
     <div
-      className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black"
+      className="flex min-h-screen items-center justify-center font-sans"
       onDrop={onDrop}
       onDragOver={onDragOver}
     >
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
+      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 sm:items-start">
         <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
           <h1 className="text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
             AI Alcohol Labeling - Multiple, TTB

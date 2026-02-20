@@ -38,7 +38,7 @@ def read_root():
 
 
 @app.post("/upload")
-def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...)):
     if file.content_type not in ["image/png", "image/jpeg"]:
         raise HTTPException(status_code=400, detail="Only PNG and JPEG files are allowed.")
     try:
@@ -174,15 +174,9 @@ async def upload_multiple_files(files: list[UploadFile] = File(...)):
     })
 
 
-################################################
-# UNTESTED - GCP UPLOAD ENDPOINTS
-# On second thought, we'll bypass these api calls
-# they can be rate limited, and body limits etc...
-################################################
-
 
 # Check status of a Document AI batch operation
-@app.get("/operation-status/{operation_name}")
+@app.get("/operation-status")
 async def get_operation_status(operation_name: str):
     opts = ClientOptions(api_endpoint=f"{location}-documentai.googleapis.com")
     client = documentai.DocumentProcessorServiceClient(client_options=opts)
@@ -207,15 +201,21 @@ async def get_job_status(job_id: str):
 
     status = "completed" if public_urls else "processing"
 
+    # List all blobs in the upload directory for this job
+    upload_prefix = f"uploads/{job_id}/"
+    blobs = list(bucket.list_blobs(prefix=upload_prefix))
+    original_urls = [blob.public_url for blob in blobs if not blob.name.endswith("/")]
+
     return JSONResponse({
         "job_id": job_id,
         "status": status,
-        "public_urls": public_urls
+        "public_urls": public_urls,
+        "original_urls": original_urls
     })
 
 
 @app.post("/generate-upload-url")
-def generate_upload_url():
+def generate_upload_url(file: UploadFile = File(...)):
     storage_client = storage.Client()
     bucket = storage_client.bucket(GCP_BUCKET_NAME)
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
@@ -224,10 +224,15 @@ def generate_upload_url():
         version="v4",
         expiration=600,  # 10 minutes
         method="PUT",
-        content_type=None,
+        # content_type=file.content_type if file.content_type else None,
     )
     return {"url": url, "id": timestamp}
 
 
+################################################
+# UNTESTED - GCP UPLOAD ENDPOINTS
+# On second thought, we'll bypass these api calls
+# they can be rate limited, and body limits etc...
+################################################
 
 
